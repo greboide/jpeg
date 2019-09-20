@@ -35,7 +35,6 @@ class MyJPEG
     (12..409_612).each_slice(5120) do |i|
       box = Matrix[]
       i.each do |a|
-        
         column = [@mpixels[a].to_i - 128,
                   @mpixels[a+640].to_i - 128,
                   @mpixels[a+1280].to_i - 128,
@@ -46,46 +45,63 @@ class MyJPEG
                   @mpixels[a+4480].to_i - 128]
         mcolumn = Matrix[column]
         box = if counter.zero?
-           Matrix.vstack(mcolumn)
-        else 
-           box.vstack(mcolumn)
-        end
+                Matrix.vstack(mcolumn)
+              else
+                box.vstack(mcolumn)
+              end
         if counter == 7
           dct = @T*box*@T.transpose
-          quantized = [[],[],[],[],[],[],[],[]] 
+          quantized  = [[],[],[],[],[],[],[],[]] 
+          quantized_sorted  = [[],[],[],[],[],[],[],[]] 
           dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q50[i,j]).round}
-          idx = 7
-          0..7.each do |idx|
+          (0..7).each do |idx|
             row = 0
             column = idx
+            row_sorted= 0
+            column_sorted=0
             loop do
-              @dctpixels[] = quantized[row][column]
+              quantized_sorted[row_sorted][column_sorted] = quantized[row][column]
               break if column.zero?
               row += row
               column -= column
+              if column_sorted == 7
+                row_sorted += 1
+                column_sorted = 0
+              else
+                column_sorted += 1
+              end
             end
           end
-          a..(a-8).each do
-            @dctpixels[a] = dct[idx,0]
-            @dctpixels[a+640] = dct[idx,1]
-            @dctpixels[a+1280] = dct[idx,2]
-            @dctpixels[a+1920] = dct[idx,3]
-            @dctpixels[a+2560] = dct[idx,4]
-            @dctpixels[a+3200] = dct[idx,5]
-            @dctpixels[a+3840] = dct[idx,6]
-            @dctpixels[a+4480] = dct[idx,7]
+          idx = 7
+          (a..(a-8)).each do
+            @dctpixels[a] = quantized_sorted[idx,0]
+            @dctpixels[a+640] = quantized_sorted[idx,1]
+            @dctpixels[a+1280] = quantized_sorted[idx,2]
+            @dctpixels[a+1920] = quantized_sorted[idx,3]
+            @dctpixels[a+2560] = quantized_sorted[idx,4]
+            @dctpixels[a+3200] = quantized_sorted[idx,5]
+            @dctpixels[a+3840] = quantized_sorted[idx,6]
+            @dctpixels[a+4480] = quantized_sorted[idx,7]
             idx -= idx
           end
 
           box = Matrix[]
         end
         if counter < 7
-          counter = counter + 1
+          counter += 1
         else
           counter = 0
         end
       end
     end
+  end
+  def write_pgm
+    f = File.new('steph2.pgm', 'w')
+    f.write("P2\n")
+    f.write("640 640 \n")
+    f.write("256\n")
+    f.close
+    IO.write("steph2.pgm", @dctpixels.join("\n"))
   end
 end
 
@@ -96,5 +112,6 @@ describe MyJPEG, '.sabe o tamanho do arquivo e ' do
   end
   it 'Separa em chunks de 8x8' do
     imagem.chunks
+    imagem.write_pgm
   end
 end
