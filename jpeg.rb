@@ -54,37 +54,53 @@ class MyJPEG
           quantized  = [[],[],[],[],[],[],[],[]] 
           quantized_sorted  = [[],[],[],[],[],[],[],[]] 
           dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q50[i,j]).round}
-          (0..7).each do |idx|
-            row = 0
-            column = idx
-            row_sorted= 0
-            column_sorted=0
+          row_sorted= 0
+          column_sorted=0
+          idx = 0
+          idx_row = 0
+          row = 0
+          column = 0
+          loop do
             loop do
               quantized_sorted[row_sorted][column_sorted] = quantized[row][column]
-              break if column.zero?
-              row += row
-              column -= column
               if column_sorted == 7
                 row_sorted += 1
                 column_sorted = 0
               else
                 column_sorted += 1
               end
+              # if idx == 7 && column.zero?
+              #   row += 1
+              # end
+              break if column == idx_row
+              row += 1
+              column -= 1
             end
+            break if (row == 7 && column == 7)
+            if idx == 7
+              idx_row += 1
+              row = idx_row
+            end
+            if idx < 7
+              idx += 1
+              row = 0
+            end
+            column = idx
           end
+          binding.pry
+
           idx = 7
-          (a..(a-8)).each do
-            @dctpixels[a] = quantized_sorted[idx,0]
-            @dctpixels[a+640] = quantized_sorted[idx,1]
-            @dctpixels[a+1280] = quantized_sorted[idx,2]
-            @dctpixels[a+1920] = quantized_sorted[idx,3]
-            @dctpixels[a+2560] = quantized_sorted[idx,4]
-            @dctpixels[a+3200] = quantized_sorted[idx,5]
-            @dctpixels[a+3840] = quantized_sorted[idx,6]
-            @dctpixels[a+4480] = quantized_sorted[idx,7]
+          for i in ((a-8)..a)
+            @dctpixels[i] = quantized_sorted[idx][0]
+            @dctpixels[i + 640] = quantized_sorted[idx][1]
+            @dctpixels[i + 1280] = quantized_sorted[idx][2]
+            @dctpixels[i + 1920] = quantized_sorted[idx][3]
+            @dctpixels[i + 2560] = quantized_sorted[idx][4]
+            @dctpixels[i + 3200] = quantized_sorted[idx][5]
+            @dctpixels[i + 3840] = quantized_sorted[idx][6]
+            @dctpixels[i + 4480] = quantized_sorted[idx][7]
             idx -= idx
           end
-
           box = Matrix[]
         end
         if counter < 7
