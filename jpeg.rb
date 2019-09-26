@@ -5,7 +5,7 @@ require 'pry'
 class MyJPEG
   # @param mpixels [Matrix]
   attr_accessor :mpixels, :file_size, :first_pixel, :file_data
-  attr_reader :T, :Q50
+  attr_reader :T, :Q50, :Q90
   def initialize(file)
     @file_data = File.read(file).split
     @mpixels = @file_data.dup
@@ -30,6 +30,14 @@ class MyJPEG
                   [24,35,55,64,81,104,113,92],
                   [49,64,78,87,103,121,120,101],
                   [72,92,95,98,112,100,103,99]]
+    @Q90 = Matrix[[3,2,2,3,5,8,10,12],
+                  [2,2,3,4,5,12,12,11],
+                  [3,3,3,5,8,11,14,11],
+                  [3,3,4,6,10,17,16,12],
+                  [4,4,7,11,14,22,21,15],
+                  [5,7,11,13,16,12,23,18],
+                  [10,13,16,17,21,24,24,21],
+                  [14,18,19,20,22,20,20,20]]
   end
 
   def encode
@@ -55,7 +63,7 @@ class MyJPEG
           dct = @T*box*@T.transpose
           quantized  = [[],[],[],[],[],[],[],[]]
           quantized_sorted  = [[],[],[],[],[],[],[],[]]
-          dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q50[i,j]).round}
+          dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q90[i,j]).round}
           row_sorted= 0
           column_sorted=0
           idx = 0
@@ -141,7 +149,7 @@ class MyJPEG
         if counter == 7
           reconstructed  = [[],[],[],[],[],[],[],[]]
           n  = [[],[],[],[],[],[],[],[]]
-          box.each_with_index {|b,i,j| reconstructed[i][j] = b*@Q50[i,j]}
+          box.each_with_index {|b,i,j| reconstructed[i][j] = b*@Q90[i,j]}
           rec = Matrix[reconstructed[0]]
           reconstructed.each_with_index { |b,i| rec = rec.vstack(Matrix[b]) if i != 0 }
           idct = @T.transpose*rec*@T
@@ -158,7 +166,6 @@ class MyJPEG
             @idctpixels[i + 4480] = n[idx][7]
             idx += idx
           end
-          binding.pry
           box = Matrix[]
         end
         if counter < 7
@@ -169,20 +176,11 @@ class MyJPEG
       end
     end
   end
-  def write_encoded_pgm
-    @dctpixels[0]= "P2"
-    @dctpixels[1] = "640 640"
-    @dctpixels[2] = "256"
-    @dctpixels[3] = 0
-    @dctpixels[4] = 0
-    @dctpixels[5] = 0
-    @dctpixels[6] = 0
-    @dctpixels[7] = 0
-    @dctpixels[8] = 0
-    @dctpixels[9] = 0
-    @dctpixels[10] = 0
-    @dctpixels[11] = 0
-    IO.write("steph2.pgm", @dctpixels.join("\n"))
+  def write_decoded_pgm
+    @idctpixels[9]= "P2"
+    @idctpixels[10] = "640 640"
+    @idctpixels[11] = "256"
+    IO.write("steph2.pgm", @idctpixels[9..409_612].join("\n"))
   end
 end
 
@@ -191,8 +189,9 @@ describe MyJPEG, '.sabe o tamanho do arquivo e ' do
   it 'Carrega o arquivo pgm' do
     expect(imagem.file_size.to_i).to eq(640)
   end
-  it 'Separa em chunks de 8x8' do
+  it 'Encodifica e decodifica a imagem' do
     imagem.encode
     imagem.decode
+    imagem.write_decoded_pgm
   end
 end
