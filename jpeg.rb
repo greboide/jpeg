@@ -14,8 +14,11 @@ class MyJPEG
     @dctpixels_quantized_sorted = []
     @dctpixels = []
     @idctpixels = []
+    @pixel_matrix_choose = {}
+    @zeros = 0
     @file_size = @file_data[10].to_i
     @first_pixel = 12
+    @QFactor = 1
     @last_pixel = @file_size**2 + @first_pixel
     # @T = Matrix[[0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536, 0.3536],
     #             [0.4904, 0.4157, 0.2778, 0.0975, -0.0975, -0.2778, -0.4157, -0.4904],
@@ -257,16 +260,115 @@ class MyJPEG
       end
       column = idx
     end
-    return quantized_sorted
+    zeros = 0
+    quantized_sorted.flatten.reverse_each { |a| if a == 0
+                                                  zeros += 1
+                                                else
+                                                  break
+                                                end
+    }
+    @zeros += zeros
+    return quantized_sorted,zeros
+  end
+  def return_box_for_trans_before(a)
+    column = [@mpixels[a-1].to_i - 128,
+              @mpixels[a-1+@file_size].to_i - 128,
+              @mpixels[a-1+2*@file_size].to_i - 128,
+              @mpixels[a-1+3*@file_size].to_i - 128,
+              @mpixels[a-1+4*@file_size].to_i - 128,
+              @mpixels[a-1+5*@file_size].to_i - 128,
+              @mpixels[a-1+6*@file_size].to_i - 128,
+              @mpixels[a-1+7*@file_size].to_i - 128]
+    matrix = Matrix.columns([column,column,column,column,column,column,column,column])
+    return matrix
+  end
+  def return_box_for_trans_before_decode(a)
+    column = [@idctpixels[a-1].to_i,
+              @idctpixels[a-1+@file_size].to_i,
+              @idctpixels[a-1+2*@file_size].to_i,
+              @idctpixels[a-1+3*@file_size].to_i,
+              @idctpixels[a-1+4*@file_size].to_i,
+              @idctpixels[a-1+5*@file_size].to_i,
+              @idctpixels[a-1+6*@file_size].to_i,
+              @idctpixels[a-1+7*@file_size].to_i]
+    matrix = Matrix.columns([column,column,column,column,column,column,column,column])
+    return matrix
+  end
+  def return_box_for_trans_above(a)
+    row = [@mpixels[a-@file_size].to_i - 128,
+           @mpixels[a+1-@file_size].to_i - 128,
+           @mpixels[a+2-@file_size].to_i - 128,
+           @mpixels[a+3-@file_size].to_i - 128,
+           @mpixels[a+4-@file_size].to_i - 128,
+           @mpixels[a+5-@file_size].to_i - 128,
+           @mpixels[a+6-@file_size].to_i - 128,
+           @mpixels[a+7-@file_size].to_i - 128]
+    matrix = Matrix.rows([row,row,row,row,row,row,row,row])
+    return matrix
+  end
+  def return_box_for_trans_above_decode(a)
+    row = [@idctpixels[a-@file_size].to_i,
+           @idctpixels[a+1-@file_size].to_i,
+           @idctpixels[a+2-@file_size].to_i,
+           @idctpixels[a+3-@file_size].to_i,
+           @idctpixels[a+4-@file_size].to_i,
+           @idctpixels[a+5-@file_size].to_i,
+           @idctpixels[a+6-@file_size].to_i,
+           @idctpixels[a+7-@file_size].to_i]
+    matrix = Matrix.rows([row,row,row,row,row,row,row,row])
+    return matrix
+  end
+  def calculate_dct(box)
+    dct = @T*box*@T.transpose
+    quantized  = [[],[],[],[],[],[],[],[]]
+    dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q50[i,j]*@QFactor).round}
+    return quantized
   end
   def encode
     (@first_pixel..@last_pixel-1).each_slice(8*@file_size) do |slice|
       slice[0..@file_size-1].each_slice(8) do |pixel|
-        box = return_box_for_encoding(pixel.first)
-        dct = @T*box*@T.transpose
-        quantized  = [[],[],[],[],[],[],[],[]]
-        dct.each_with_index {|b,i,j| quantized[i][j] = (b/@Q90[i,j]).round}
-        write_dct_quantized(pixel.first,quantized)
+        if pixel.first == first_pixel
+          box = return_box_for_encoding(pixel.first)
+          quantized  = calculate_dct(box)
+          write_dct_quantized(pixel.first,quantized)
+          @pixel_matrix_choose[:pixel.first] = 1
+        elsif pixel.first < @file_size
+          box = return_box_for_encoding(pixel.first)
+          trans_before = return_box_for_trans_before(pixel.first)
+          quantized  = calculate_dct(box)
+          new_quantized = calculate_dct(box - trans_before)
+          if zigzag(quantized)[1] < zigzag(new_quantized)[1]
+            write_dct_quantized(pixel.first,new_quantized)
+            @pixel_matrix_choose[:pixel.first] = 2
+          else
+            write_dct_quantized(pixel.first,quantized)
+            @pixel_matrix_choose[:pixel.first] = 1
+          end
+        else
+          box = return_box_for_encoding(pixel.first)
+          trans_before = return_box_for_trans_before(pixel.first)
+          trans_above = return_box_for_trans_above(pixel.first)
+          quantized  = calculate_dct(box)
+          quantized_before = calculate_dct(box - trans_before)
+          quantized_above = calculate_dct(box - trans_above)
+          if zigzag(quantized_before)[1] < zigzag(quantized_above)[1]
+            if zigzag(quantized)[1] < zigzag(quantized_above)[1]
+              write_dct_quantized(pixel.first,quantized_above)
+              @pixel_matrix_choose[:pixel.first] = 3
+            else
+              write_dct_quantized(pixel.first,quantized)
+              @pixel_matrix_choose[:pixel.first] = 1
+            end
+          else
+            if zigzag(quantized)[1] < zigzag(quantized_before)[1]
+              write_dct_quantized(pixel.first,quantized_before)
+              @pixel_matrix_choose[:pixel.first] = 2
+            else
+              write_dct_quantized(pixel.first,quantized)
+              @pixel_matrix_choose[:pixel.first] = 1
+            end
+          end
+        end
       end
     end
   end
@@ -276,7 +378,7 @@ class MyJPEG
         box = return_box_for_decoding(pixel.first)
         reconstructed = [[],[],[],[],[],[],[],[]]
         n  = [[],[],[],[],[],[],[],[]]
-        box.each_with_index { |b, c, d| reconstructed[c][d] = b * @Q90[c, d] }
+        box.each_with_index { |b, c, d| reconstructed[c][d] = b * @Q50[c, d]*@QFactor }
         rec = Matrix[reconstructed[0]]
         reconstructed.each_with_index { |b,i| rec = rec.vstack(Matrix[b]) if i != 0 }
         idct = @T.transpose*rec*@T
