@@ -4,7 +4,7 @@ require 'pry'
 
 class MyJPEG
   # @param mpixels [Matrix]
-  attr_accessor :mpixels, :file_size, :first_pixel, :file_data
+  attr_accessor :mpixels, :file_size, :first_pixel, :file_data, :zeros,:zeros_before,:zeros_above,:zeros_normal
   attr_reader :T, :Q50, :Q90
   def initialize(file)
     @file_name = 'output.pgm'
@@ -16,6 +16,9 @@ class MyJPEG
     @idctpixels = []
     @pixel_matrix_choose = {}
     @zeros = 0
+    @zeros_before = 0
+    @zeros_above = 0
+    @zeros_normal = 0
     @file_size = @file_data[10].to_i
     @first_pixel = 12
     @QFactor = 1
@@ -267,7 +270,6 @@ class MyJPEG
                                                   break
                                                 end
     }
-    @zeros += zeros
     return quantized_sorted,zeros
   end
   def return_box_for_trans_before(a)
@@ -283,14 +285,14 @@ class MyJPEG
     return matrix
   end
   def return_box_for_trans_before_decode(a)
-    column = [@idctpixels[a-1].to_i,
-              @idctpixels[a-1+@file_size].to_i,
-              @idctpixels[a-1+2*@file_size].to_i,
-              @idctpixels[a-1+3*@file_size].to_i,
-              @idctpixels[a-1+4*@file_size].to_i,
-              @idctpixels[a-1+5*@file_size].to_i,
-              @idctpixels[a-1+6*@file_size].to_i,
-              @idctpixels[a-1+7*@file_size].to_i]
+    column = [@idctpixels[a-1].to_i - 128,
+              @idctpixels[a-1+@file_size].to_i - 128,
+              @idctpixels[a-1+2*@file_size].to_i - 128,
+              @idctpixels[a-1+3*@file_size].to_i - 128,
+              @idctpixels[a-1+4*@file_size].to_i - 128,
+              @idctpixels[a-1+5*@file_size].to_i - 128,
+              @idctpixels[a-1+6*@file_size].to_i - 128,
+              @idctpixels[a-1+7*@file_size].to_i - 128]
     matrix = Matrix.columns([column,column,column,column,column,column,column,column])
     return matrix
   end
@@ -307,14 +309,14 @@ class MyJPEG
     return matrix
   end
   def return_box_for_trans_above_decode(a)
-    row = [@idctpixels[a-@file_size].to_i,
-           @idctpixels[a+1-@file_size].to_i,
-           @idctpixels[a+2-@file_size].to_i,
-           @idctpixels[a+3-@file_size].to_i,
-           @idctpixels[a+4-@file_size].to_i,
-           @idctpixels[a+5-@file_size].to_i,
-           @idctpixels[a+6-@file_size].to_i,
-           @idctpixels[a+7-@file_size].to_i]
+    row = [@idctpixels[a-@file_size].to_i - 128,
+           @idctpixels[a+1-@file_size].to_i - 128,
+           @idctpixels[a+2-@file_size].to_i - 128,
+           @idctpixels[a+3-@file_size].to_i - 128,
+           @idctpixels[a+4-@file_size].to_i - 128,
+           @idctpixels[a+5-@file_size].to_i - 128,
+           @idctpixels[a+6-@file_size].to_i - 128,
+           @idctpixels[a+7-@file_size].to_i - 128]
     matrix = Matrix.rows([row,row,row,row,row,row,row,row])
     return matrix
   end
@@ -327,45 +329,50 @@ class MyJPEG
   def encode
     (@first_pixel..@last_pixel-1).each_slice(8*@file_size) do |slice|
       slice[0..@file_size-1].each_slice(8) do |pixel|
-        if pixel.first == first_pixel
-          box = return_box_for_encoding(pixel.first)
-          quantized  = calculate_dct(box)
+        pixel_first = pixel.first
+        box = return_box_for_encoding(pixel.first)
+        quantized  = calculate_dct(box)
+        @zeros += zigzag(quantized)[1]
+        if pixel.first == @first_pixel
           write_dct_quantized(pixel.first,quantized)
-          @pixel_matrix_choose[:pixel.first] = 1
+          @pixel_matrix_choose[pixel_first] = 1
+          @zeros_normal += zigzag(quantized)[1]
         elsif pixel.first < @file_size
-          box = return_box_for_encoding(pixel.first)
           trans_before = return_box_for_trans_before(pixel.first)
-          quantized  = calculate_dct(box)
           new_quantized = calculate_dct(box - trans_before)
           if zigzag(quantized)[1] < zigzag(new_quantized)[1]
             write_dct_quantized(pixel.first,new_quantized)
-            @pixel_matrix_choose[:pixel.first] = 2
+            @pixel_matrix_choose[pixel_first] = 2
+            @zeros_before += zigzag(new_quantized)[1]
           else
             write_dct_quantized(pixel.first,quantized)
-            @pixel_matrix_choose[:pixel.first] = 1
+            @pixel_matrix_choose[pixel_first] = 1
+            @zeros_normal += zigzag(quantized)[1]
           end
         else
-          box = return_box_for_encoding(pixel.first)
           trans_before = return_box_for_trans_before(pixel.first)
           trans_above = return_box_for_trans_above(pixel.first)
-          quantized  = calculate_dct(box)
           quantized_before = calculate_dct(box - trans_before)
           quantized_above = calculate_dct(box - trans_above)
           if zigzag(quantized_before)[1] < zigzag(quantized_above)[1]
             if zigzag(quantized)[1] < zigzag(quantized_above)[1]
               write_dct_quantized(pixel.first,quantized_above)
-              @pixel_matrix_choose[:pixel.first] = 3
+              @pixel_matrix_choose[pixel_first] = 3
+              @zeros_above += zigzag(quantized_above)[1]
             else
               write_dct_quantized(pixel.first,quantized)
-              @pixel_matrix_choose[:pixel.first] = 1
+              @pixel_matrix_choose[pixel_first] = 1
+              @zeros_normal += zigzag(quantized)[1]
             end
           else
             if zigzag(quantized)[1] < zigzag(quantized_before)[1]
               write_dct_quantized(pixel.first,quantized_before)
-              @pixel_matrix_choose[:pixel.first] = 2
+              @pixel_matrix_choose[pixel_first] = 2
+              @zeros_before += zigzag(quantized_before)[1]
             else
               write_dct_quantized(pixel.first,quantized)
-              @pixel_matrix_choose[:pixel.first] = 1
+              @pixel_matrix_choose[pixel_first] = 1
+              @zeros_normal += zigzag(quantized)[1]
             end
           end
         end
@@ -375,6 +382,7 @@ class MyJPEG
   def decode
     (@first_pixel..@last_pixel-1).each_slice(8*@file_size)do |slice|
       slice[0..@file_size-1].each_slice(8) do |pixel|
+        pixel_first = pixel.first
         box = return_box_for_decoding(pixel.first)
         reconstructed = [[],[],[],[],[],[],[],[]]
         n  = [[],[],[],[],[],[],[],[]]
@@ -383,7 +391,17 @@ class MyJPEG
         reconstructed.each_with_index { |b,i| rec = rec.vstack(Matrix[b]) if i != 0 }
         idct = @T.transpose*rec*@T
         idct.each_with_index{ |b,i,j| n[i][j] = b.round + 128 }
-        write_idct(pixel.first,n)
+        if @pixel_matrix_choose[pixel_first] == 1
+          write_idct(pixel.first,n)
+        elsif @pixel_matrix_choose[pixel_first] == 2
+          quantized_before = return_box_for_trans_before_decode(pixel.first)
+          new = Matrix[*n]
+          write_idct(pixel.first, (new + quantized_before).to_a)
+        else
+          quantized_above = return_box_for_trans_above_decode(pixel.first)
+          new = Matrix[*n]
+          write_idct(pixel.first, (new + quantized_above).to_a)
+        end
       end
     end
   end
@@ -396,10 +414,11 @@ class MyJPEG
 end
 
 describe MyJPEG, '.sabe o tamanho do arquivo e ' do
-  let(:imagem) { MyJPEG.new('steph.pgm') }
+  let(:imagem) { MyJPEG.new('vertical.pgm') }
   it 'Encodifica e decodifica a imagem' do
     imagem.encode
     imagem.decode
     imagem.write_decoded_pgm
+    puts imagem.zeros.to_s + " vs " + (imagem.zeros_before+imagem.zeros_normal+imagem.zeros_above).to_s
   end
 end
