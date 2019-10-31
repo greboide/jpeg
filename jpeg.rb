@@ -4,9 +4,12 @@ require 'pry'
 
 class MyJPEG
   # @param mpixels [Matrix]
-  attr_accessor :mpixels, :file_size, :first_pixel, :file_data, :zeros,:zeros_before,:zeros_above,:zeros_normal
+  attr_accessor :mpixels, :file_size, :first_pixel, :file_data,
+                :zeros,:zeros_before,:zeros_above,:zeros_normal,
+                :zigtest
   attr_reader :T, :Q50, :Q90
   def initialize(file)
+    @zigtest = [[1,	2,	6,	7,	15,	16,	0,	0], [3,	5,	8,	14,	17,	0,	0,	0], [4,	9,	13,	18,	0,	0,	0,	0], [10,	12,	19,	0,	0,	0,	0,	0], [11,	20,	24,	0,	0,	0,	0,	0] ,[21,	23,	0,	0,	0,	0,	0,	0],[ 21,	0,	0,	0,	0,	0,	0,	0], [0,	0,	0,	0,	0,	0,	0,	0]]
     @file_name = 'output.pgm'
     @file_data = File.read(file).split
     @mpixels = @file_data.dup
@@ -231,7 +234,7 @@ class MyJPEG
       @idctpixels[a + idx + 7*@file_size] = n[idx][7]
     end
   end
-  def zigzag(quantized)
+  def zigzig(quantized)
     quantized_sorted  = [[],[],[],[],[],[],[],[]]
     row_sorted= 0
     column_sorted=0
@@ -269,6 +272,81 @@ class MyJPEG
                                                 else
                                                   break
                                                 end
+    }
+    return quantized_sorted,zeros
+  end
+  def zigzag(quantized)
+    quantized_sorted  = [[],[],[],[],[],[],[],[]]
+    row_sorted= 0
+    column_sorted=0
+    idx = 0
+    idx_row = 0
+    row = 0
+    column = 0
+    bit = 0
+    loop do
+      loop do
+        puts row.to_s + " " + column.to_s
+        quantized_sorted[row_sorted][column_sorted] = quantized[row][column]
+        if column_sorted == 7
+          row_sorted += 1
+          column_sorted = 0
+        else
+          column_sorted += 1
+        end
+        if bit == 1
+          if column == 0
+            if row == 7
+              column += 1
+              bit = 0
+              break
+            else
+              row += 1
+              column = 0
+              bit = 0
+              break
+            end
+          end
+        else
+          if row == 0
+            if column == 7
+              row += 1
+              bit = 1
+              break
+            else
+              column += 1
+              bit = 1
+              break
+            end
+          end
+        end
+        if bit == 1
+          if row == 7
+            column += 1
+            bit = 0
+            break
+          end
+          row += 1
+          column -= 1
+        else
+          if column == 7
+            row += 1
+            bit = 1
+            break
+          end
+          row -= 1
+          column += 1
+        end
+      end
+      break if (row == 7 && column == 7)
+    end
+
+    zeros = 0
+    quantized_sorted.flatten.reverse_each { |a| if a == 0
+                                                zeros += 1
+                                              else
+                                                break
+                                          end
     }
     return quantized_sorted,zeros
   end
@@ -416,9 +494,12 @@ end
 describe MyJPEG, '.sabe o tamanho do arquivo e ' do
   let(:imagem) { MyJPEG.new('vertical.pgm') }
   it 'Encodifica e decodifica a imagem' do
-    imagem.encode
-    imagem.decode
-    imagem.write_decoded_pgm
-    puts imagem.zeros.to_s + " vs " + (imagem.zeros_before+imagem.zeros_normal+imagem.zeros_above).to_s
+    #imagem.encode
+    #imagem.decode
+    #imagem.write_decoded_pgm
+    #puts imagem.zeros.to_s + " vs " +
+    #(imagem.zeros_before+imagem.zeros_normal+imagem.zeros_above).to_s
+    a = imagem.zigzag(imagem.zigtest)
+    binding.pry
   end
 end
